@@ -36,6 +36,29 @@ pub struct CheckpointRequest {
     pub request_content: bool,
 }
 
+pub enum CheckpointWatermark {
+    // highest checkpoint available in the network with
+    // a quorum of signatures
+    HighestVerified,
+
+    // highest checkpoint downloaded and persisted locally
+    HighestSynced,
+
+    // highest checkpoint executed
+    HighestExecuted,
+
+    // highest checkpoint ready to be hashed
+    HighestReadyToHash,
+
+    // highest checkpoint for which StateAccumulator
+    // has persisted a checkpoint state hash
+    HighestHashed,
+
+    // highest checkpoint which has been accumulated
+    // into the root state hash
+    HighestAccumulated,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckpointResponse {

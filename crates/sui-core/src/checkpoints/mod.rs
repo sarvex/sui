@@ -19,7 +19,6 @@ use futures::future::{select, Either};
 use futures::FutureExt;
 use mysten_metrics::{monitored_scope, spawn_monitored_task, MonitoredFutureExt};
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 
 use crate::authority::authority_per_epoch_store::AuthorityPerEpochStore;
 use crate::authority_aggregator::TransactionCertifier;
@@ -35,7 +34,8 @@ use sui_types::gas::GasCostSummary;
 use sui_types::messages::{SignedTransactionEffects, TransactionEffects};
 use sui_types::messages_checkpoint::{
     CertifiedCheckpointSummary, CheckpointContents, CheckpointContentsDigest, CheckpointDigest,
-    CheckpointSequenceNumber, CheckpointSignatureMessage, CheckpointSummary, VerifiedCheckpoint,
+    CheckpointSequenceNumber, CheckpointSignatureMessage, CheckpointSummary, CheckpointWatermark,
+    VerifiedCheckpoint,
 };
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::time::Instant;
@@ -204,6 +204,13 @@ impl CheckpointStore {
         self.checkpoint_content.get(digest)
     }
 
+    pub fn get_checkpoint_summary(
+        &self,
+        checkpoint_sequence_number: &CheckpointSequenceNumber,
+    ) -> Result<Option<CheckpointSummary>, TypedStoreError> {
+        self.checkpoint_summary.get(checkpoint_sequence_number)
+    }
+
     pub fn insert_certified_checkpoint(
         &self,
         checkpoint: &CertifiedCheckpointSummary,
@@ -317,13 +324,6 @@ impl CheckpointStore {
                 .computation_cost,
         })
     }
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum CheckpointWatermark {
-    HighestVerified,
-    HighestSynced,
-    HighestExecuted,
 }
 
 pub struct CheckpointBuilder {
