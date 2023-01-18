@@ -220,6 +220,25 @@ impl AuthorityStore {
             .map(|(epoch, _)| epoch))
     }
 
+    pub fn get_checkpointed_transaction(
+        &self,
+        digest: &TransactionDigest,
+    ) -> SuiResult<Option<(VerifiedCertificate, EpochId, CheckpointSequenceNumber)>> {
+        match self
+            .perpetual_tables
+            .executed_transactions_to_checkpoint
+            .get(digest)?
+        {
+            Some((epoch, checkpoint)) => {
+                let cert = self
+                    .get_certified_transaction(digest)?
+                    .expect("Certificate must exist for a checkpointed transaction");
+                Ok(Some((cert, epoch, checkpoint)))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Returns true if there are no objects in the database
     pub fn database_is_empty(&self) -> SuiResult<bool> {
         self.perpetual_tables.database_is_empty()

@@ -1320,6 +1320,7 @@ impl From<TransactionDigest> for TransactionInfoRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HandleCertificateResponse {
     pub signed_effects: SignedTransactionEffects,
+    // TODO: Add a case for finalized transaction.
 }
 
 #[derive(Clone, Debug)]
@@ -1328,41 +1329,31 @@ pub struct VerifiedHandleCertificateResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TransactionInfoResponse<
-    TxnT = SignedTransaction,
-    CertT = CertifiedTransaction,
-    EffectsT = SignedTransactionEffects,
-> {
-    // The signed transaction response to handle_transaction
-    pub signed_transaction: Option<TxnT>,
-    // The certificate in case one is available
-    pub certified_transaction: Option<CertT>,
-    // The effects resulting from a successful execution should
-    // contain ObjectRef created, mutated, deleted and events.
-    pub signed_effects: Option<EffectsT>,
+pub enum TransactionInfoResponse<TxnT = SignedTransaction, CertT = CertifiedTransaction> {
+    Signed(TxnT),
+    Certified(CertT),
+    /// Indicates that this transaction has been finalized through checkpoint inclusion. This allows
+    /// the receiver to accept a certificate that has an older epoch number than what they are
+    /// expecting.
+    /// TODO: Eventually, we can include effects here as well.
+    Finalized(CertT, EpochId, CheckpointSequenceNumber),
 }
 
-pub type VerifiedTransactionInfoResponse = TransactionInfoResponse<
-    VerifiedSignedTransaction,
-    VerifiedCertificate,
-    VerifiedSignedTransactionEffects,
->;
+pub type VerifiedTransactionInfoResponse =
+    TransactionInfoResponse<VerifiedSignedTransaction, VerifiedCertificate>;
 
 impl From<VerifiedTransactionInfoResponse> for TransactionInfoResponse {
     fn from(v: VerifiedTransactionInfoResponse) -> Self {
-        let VerifiedTransactionInfoResponse {
-            signed_transaction,
-            certified_transaction,
-            signed_effects,
-        } = v;
-
-        let certified_transaction = certified_transaction.map(|c| c.into_inner());
-        let signed_transaction = signed_transaction.map(|c| c.into_inner());
-        let signed_effects = signed_effects.map(|s| s.into_inner());
-        TransactionInfoResponse {
-            signed_transaction,
-            certified_transaction,
-            signed_effects,
+        match v {
+            VerifiedTransactionInfoResponse::Signed(s) => {
+                TransactionInfoResponse::Signed(s.into_inner())
+            }
+            VerifiedTransactionInfoResponse::Certified(c) => {
+                TransactionInfoResponse::Certified(c.into_inner())
+            }
+            VerifiedTransactionInfoResponse::Finalized(f, e, c) => {
+                TransactionInfoResponse::Finalized(f.into_inner(), e, c)
+            }
         }
     }
 }

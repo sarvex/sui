@@ -230,77 +230,60 @@ impl<C> SafeClient<C> {
     fn check_transaction_response(
         &self,
         digest: &TransactionDigest,
-        effects_digest: Option<&TransactionEffectsDigest>,
         response: TransactionInfoResponse,
     ) -> SuiResult<VerifiedTransactionInfoResponse> {
-        let mut committee = None;
-
-        let TransactionInfoResponse {
-            signed_transaction,
-            certified_transaction,
-            signed_effects,
-        } = response;
-
-        let signed_transaction = if let Some(signed_transaction) = signed_transaction {
-            // TODO: add test case where validator epoch advances but client does not know
-            // `MissingCommitteeAtEpoch`
-            // In this case, quorum driver should pause submit tranasactions until it catches up
-            committee = Some(self.get_committee(&signed_transaction.epoch())?);
-            // Check the transaction signature
-            let signed_transaction = signed_transaction.verify(committee.as_ref().unwrap())?;
-            // Check it has the right signer
-            fp_ensure!(
-                signed_transaction.auth_sig().authority == self.address,
-                SuiError::ByzantineAuthoritySuspicion {
-                    authority: self.address,
-                    reason: "Unexpected validator address in the signed tx signature".to_string()
-                }
-            );
-            // Check it's the right transaction
-            fp_ensure!(
-                signed_transaction.digest() == digest,
-                SuiError::ByzantineAuthoritySuspicion {
-                    authority: self.address,
-                    reason: "Unexpected digest in the signed tx".to_string()
-                }
-            );
-            Some(signed_transaction)
-        } else {
-            None
-        };
-
-        let certified_transaction = match certified_transaction {
-            Some(certificate) => {
-                if committee.is_none() {
-                    committee = Some(self.get_committee(&certificate.epoch())?);
-                }
-                // Check signatures and quorum
-                let certificate = certificate.verify(committee.as_ref().unwrap())?;
-                // Check it's the right transaction
+        match response {
+            TransactionInfoResponse::Signed(signed) => {
+                // Check it has the right signer
                 fp_ensure!(
-                    certificate.digest() == digest,
+                    signed.auth_sig().authority == self.address,
                     SuiError::ByzantineAuthoritySuspicion {
                         authority: self.address,
-                        reason: "Unexpected digest in the certified tx".to_string()
+                        reason: "Unexpected validator address in the signed tx signature"
+                            .to_string()
                     }
                 );
-                Some(certificate)
+                // Check it's the right transaction
+                fp_ensure!(
+                    signed.digest() == digest,
+                    SuiError::ByzantineAuthoritySuspicion {
+                        authority: self.address,
+                        reason: "Unexpected digest in the signed tx".to_string()
+                    }
+                );
+                // TODO: add test case where validator epoch advances but client does not know
+                // `MissingCommitteeAtEpoch`
+                // In this case, quorum driver should pause submit transactions until it catches up
+                let committee = self.get_committee(&signed.epoch())?;
+                // Check the transaction signature
+                let signed = signed.verify(&committee)?;
+                Ok(VerifiedTransactionInfoResponse::Signed(signed))
             }
-            None => None,
-        };
+            TransactionInfoResponse::Certified(certificate) => self
+                .check_certificate(certificate, digest)
+                .map(VerifiedTransactionInfoResponse::Certified),
+            TransactionInfoResponse::Finalized(certificate, epoch, checkpoint) => self
+                .check_certificate(certificate, digest)
+                .map(|cert| VerifiedTransactionInfoResponse::Finalized(cert, epoch, checkpoint)),
+        }
+    }
 
-        let signed_effects = match signed_effects {
-            Some(signed_effects) => {
-                Some(self.check_signed_effects(digest, signed_effects, effects_digest)?)
+    fn check_certificate(
+        &self,
+        certificate: CertifiedTransaction,
+        expected_digest: &TransactionDigest,
+    ) -> SuiResult<VerifiedCertificate> {
+        // Check it's the right transaction
+        fp_ensure!(
+            certificate.digest() == expected_digest,
+            SuiError::ByzantineAuthoritySuspicion {
+                authority: self.address,
+                reason: "Unexpected digest in the certified tx".to_string()
             }
-            None => None,
-        };
-
-        Ok(VerifiedTransactionInfoResponse {
-            signed_transaction,
-            certified_transaction,
-            signed_effects,
-        })
+        );
+        let committee = self.get_committee(&certificate.epoch())?;
+        // Check signatures and quorum
+        certificate.verify(&committee)
     }
 
     fn check_object_response(
@@ -444,16 +427,16 @@ where
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
         let digest = *transaction.digest();
         let _timer = self.metrics.handle_transaction_latency.start_timer();
-        let transaction_info = self
+        let response = self
             .authority_client
             .handle_transaction(transaction.into_inner())
             .await?;
-        let transaction_info = check_error!(
+        let response = check_error!(
             self.address,
-            self.check_transaction_response(&digest, None, transaction_info),
+            self.check_transaction_response(&digest, response),
             "Client error in handle_transaction"
         )?;
-        Ok(transaction_info)
+        Ok(response)
     }
 
     fn verify_certificate_response(
@@ -540,11 +523,7 @@ where
             .handle_transaction_info_request(request)
             .await?;
 
-        let transaction_info = match self.check_transaction_response(
-            &digest,
-            None,
-            transaction_info,
-        ) {
+        let transaction_info = match self.check_transaction_response(&digest, transaction_info) {
             Err(err) => {
                 error!(?err, authority=?self.address, "Client error in handle_transaction_info_request");
                 return Err(err);
@@ -553,36 +532,6 @@ where
         };
         self.metrics
             .total_ok_responses_handle_transaction_info_request
-            .inc();
-        Ok(transaction_info)
-    }
-
-    /// Handle Transaction + Effects information requests for this account.
-    pub async fn handle_transaction_and_effects_info_request(
-        &self,
-        digests: &ExecutionDigests,
-    ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
-        self.metrics
-            .total_requests_handle_transaction_and_effects_info_request
-            .inc();
-        let transaction_info = self
-            .authority_client
-            .handle_transaction_info_request(digests.transaction.into())
-            .await?;
-
-        let transaction_info = match self.check_transaction_response(
-            &digests.transaction,
-            Some(&digests.effects),
-            transaction_info,
-        ) {
-            Err(err) => {
-                error!(?err, authority=?self.address, "Client error in handle_transaction_and_effects_info_request");
-                return Err(err);
-            }
-            Ok(info) => info,
-        };
-        self.metrics
-            .total_ok_responses_handle_transaction_and_effects_info_request
             .inc();
         Ok(transaction_info)
     }

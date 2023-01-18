@@ -475,9 +475,7 @@ impl AuthorityState {
         &self,
         transaction: VerifiedTransaction,
         epoch_store: &Arc<AuthorityPerEpochStore>,
-    ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
-        let transaction_digest = *transaction.digest();
-
+    ) -> Result<VerifiedSignedTransaction, SuiError> {
         let (_gas_status, input_objects) = transaction_input_checker::check_transaction_input(
             &self.database,
             &transaction.data().intent_message.value,
@@ -514,12 +512,10 @@ impl AuthorityState {
         // The call to self.set_transaction_lock checks the lock is not conflicting,
         // and returns ConflictingTransaction error in case there is a lock on a different
         // existing transaction.
-        self.set_transaction_lock(&owned_objects, signed_transaction, epoch_store)
+        self.set_transaction_lock(&owned_objects, signed_transaction.clone(), epoch_store)
             .await?;
 
-        // Return the signed Transaction or maybe a cert.
-        self.make_transaction_info(&transaction_digest, epoch_store)
-            .await
+        Ok(signed_transaction)
     }
 
     /// Initiate a new transaction.
@@ -527,23 +523,15 @@ impl AuthorityState {
         &self,
         transaction: VerifiedTransaction,
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
+        let epoch_store = self.epoch_store();
+
         let transaction_digest = *transaction.digest();
         debug!(
             "handle_transaction. Tx data: {:?}",
             &transaction.data().intent_message.value
         );
-
-        let epoch_store = self.epoch_store();
-        // Ensure an idempotent answer. This is checked before the system_tx check so that
-        // a validator is able to return the signed system tx if it was already signed locally.
-        if epoch_store
-            .get_signed_transaction(&transaction_digest)?
-            .is_some()
-        {
-            self.metrics.tx_already_processed.inc();
-            return self
-                .make_transaction_info(&transaction_digest, &epoch_store)
-                .await;
+        if let Some(response) = self.make_transaction_info(&transaction_digest, &epoch_store)? {
+            return Ok(response);
         }
 
         // CRITICAL! Validators should never sign an external system transaction.
@@ -566,17 +554,19 @@ impl AuthorityState {
             return Err(SuiError::ValidatorHaltedAtEpochEnd);
         }
 
-        let response = self
+        let signed = self
             .handle_transaction_impl(transaction, &epoch_store)
             .await;
-        match response {
-            Ok(r) => Ok(r),
-            // If we see an error, it is possible that a certificate has already been processed.
+        match signed {
+            Ok(r) => Ok(VerifiedTransactionInfoResponse::Signed(r)),
+            // It happens frequently that while we are checking the validity of the transaction, it
+            // has just been executed.
             // In that case, we could still return Ok to avoid showing confusing errors.
             Err(err) => self
-                .get_tx_info_already_executed(&transaction_digest, &epoch_store)
-                .await?
-                .ok_or(err),
+                .database
+                .get_certified_transaction(&transaction_digest)?
+                .ok_or(err)
+                .map(VerifiedTransactionInfoResponse::Certified),
         }
     }
 
@@ -1163,19 +1153,6 @@ impl AuthorityState {
         self.database.effects_exists(digest)
     }
 
-    pub async fn get_tx_info_already_executed(
-        &self,
-        digest: &TransactionDigest,
-        epoch_store: &Arc<AuthorityPerEpochStore>,
-    ) -> SuiResult<Option<VerifiedTransactionInfoResponse>> {
-        if self.database.effects_exists(digest)? {
-            debug!("Transaction {digest:?} already executed");
-            Ok(Some(self.make_transaction_info(digest, epoch_store).await?))
-        } else {
-            Ok(None)
-        }
-    }
-
     #[instrument(level = "debug", skip_all, err)]
     fn index_tx(
         &self,
@@ -1431,8 +1408,10 @@ impl AuthorityState {
         &self,
         request: TransactionInfoRequest,
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
-        self.make_transaction_info(&request.transaction_digest, &self.epoch_store())
-            .await
+        self.make_transaction_info(&request.transaction_digest, &self.epoch_store())?
+            .ok_or(SuiError::TransactionNotFound {
+                digest: request.transaction_digest,
+            })
     }
 
     pub async fn handle_account_info_request(
@@ -2330,19 +2309,35 @@ impl AuthorityState {
     }
 
     /// Make an information response for a transaction
-    pub async fn make_transaction_info(
+    pub fn make_transaction_info(
         &self,
         transaction_digest: &TransactionDigest,
         epoch_store: &Arc<AuthorityPerEpochStore>,
-    ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
-        Ok(VerifiedTransactionInfoResponse {
-            signed_transaction: epoch_store.get_signed_transaction(transaction_digest)?,
-            certified_transaction: self
-                .database
-                .get_certified_transaction(transaction_digest)?,
-            signed_effects: self
-                .get_signed_effects_and_maybe_resign(epoch_store.epoch(), transaction_digest)?,
-        })
+    ) -> Result<Option<VerifiedTransactionInfoResponse>, SuiError> {
+        if let Some((cert, epoch, checkpoint)) = self
+            .database
+            .get_checkpointed_transaction(&transaction_digest)?
+        {
+            return Ok(Some(VerifiedTransactionInfoResponse::Finalized(
+                cert, epoch, checkpoint,
+            )));
+        }
+
+        if let Some(cert) = self
+            .database
+            .get_certified_transaction(&transaction_digest)?
+        {
+            return Ok(Some(VerifiedTransactionInfoResponse::Certified(cert)));
+        }
+
+        // Ensure an idempotent answer. This is checked before the system_tx check so that
+        // a validator is able to return the signed system tx if it was already signed locally.
+        if let Some(signed) = epoch_store.get_signed_transaction(&transaction_digest)? {
+            self.metrics.tx_already_processed.inc();
+            return Ok(Some(VerifiedTransactionInfoResponse::Signed(signed)));
+        }
+
+        Ok(None)
     }
 
     /// Get the signed effects of the given transaction. If the effects was signed in a previous
