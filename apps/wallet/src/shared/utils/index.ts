@@ -6,8 +6,8 @@ import { useLocation } from 'react-router-dom';
 import Browser from 'webextension-polyfill';
 
 import { trackPageview, trackEvent } from '../plausible';
-import { growthbook } from '_app/experimentation/feature-gating';
 import { useAppSelector } from '_hooks';
+import { growthbook } from '_src/ui/app/experimentation/feature-gating';
 
 export const MAIN_UI_URL = Browser.runtime.getURL('ui.html');
 const WALLET_VERSION = Browser.runtime.getManifest().version;
@@ -36,10 +36,6 @@ export function usePageView() {
 
         trackPageview({
             url: location.pathname,
-        });
-
-        growthbook.setAttributes({
-            network: activeNetwork,
         });
         // Send a network event to Plausible with the page and url params
         trackEvent('PageByNetwork', {
