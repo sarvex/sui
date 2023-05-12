@@ -24,7 +24,7 @@ class LogParser:
         inputs = [clients, primaries, workers]
         assert all(isinstance(x, list) for x in inputs)
         assert all(isinstance(x, str) for y in inputs for x in y)
-        assert all(x for x in inputs)
+        assert all(inputs)
 
         self.faults = faults
         if isinstance(faults, int):
@@ -42,7 +42,7 @@ class LogParser:
             exception(e)
             raise ParseError(f'Failed to parse clients\' logs: {e}')
         self.size, self.rate, self.start, misses, self.sent_samples \
-            = zip(*results)
+                = zip(*results)
         self.misses = sum(misses)
 
         # Parse the primaries logs.
@@ -356,9 +356,9 @@ class LogGrpcParser:
         self.grpc_ports = results
 
     def _parse_primaries(self, log):
-        port = search(
-            r'Consensus API gRPC Server listening on /ip4/.+/tcp/(.+)/http', log).group(1)
-        return port
+        return search(
+            r'Consensus API gRPC Server listening on /ip4/.+/tcp/(.+)/http', log
+        ).group(1)
 
     @classmethod
     def process(cls, directory, faults=0):

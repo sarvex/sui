@@ -23,10 +23,10 @@ class CommandMaker:
         cmd = ["cargo", "build", "--quiet", "--features", "benchmark"]
 
         if failpoints:
-            cmd = cmd + [cmd.pop(-1) + " fail/failpoints"]
+            cmd += [f"{cmd.pop(-1)} fail/failpoints"]
 
         if release:
-            cmd = cmd + ["--release"]
+            cmd += ["--release"]
 
         return cmd
 

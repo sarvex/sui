@@ -54,14 +54,10 @@ class Setup:
         nodes = int(search(r'Committee size: (\d+)', raw).group(1))
 
         tmp = search(r'Worker\(s\) per node: (\d+)', raw)
-        workers = int(tmp.group(1)) if tmp is not None else 1
+        workers = int(tmp[1]) if tmp is not None else 1
 
         tmp = search(r'Collocate primary and workers: (True|False)', raw)
-        if tmp is not None:
-            collocate = 'True' == tmp.group(1)
-        else:
-            collocate = 'True'
-
+        collocate = tmp[1] == 'True' if tmp is not None else 'True'
         rate = int(search(r'Input rate: (\d+)', raw).group(1))
         tx_size = int(search(r'Transaction size: (\d+)', raw).group(1))
         return cls(faults, nodes, workers, collocate, rate, tx_size)
@@ -205,10 +201,7 @@ class LogAggregator:
 
 @ticker.FuncFormatter
 def default_major_formatter(x, pos):
-    if x >= 1_000:
-        return f'{x/1000:.0f}k'
-    else:
-        return f'{x:.0f}'
+    return f'{x / 1000:.0f}k' if x >= 1_000 else f'{x:.0f}'
 
 
 def sec_major_formatter(x, pos):

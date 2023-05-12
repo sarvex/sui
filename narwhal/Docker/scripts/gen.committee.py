@@ -33,16 +33,17 @@ def main():
         network_keys.append(json.loads(k))
 
 
-    temp = {}
-    for i, (k, nk) in enumerate(zip(keys, network_keys)):
-        temp[k['name']] = {
+    temp = {
+        k['name']: {
             "network_key": nk['name'],
             "primary": {
                 "primary_to_primary": "/dns/primary_{:02d}/udp/3000".format(i),
-                "worker_to_primary": "/dns/primary_{:02d}/udp/3001".format(i)
+                "worker_to_primary": "/dns/primary_{:02d}/udp/3001".format(i),
             },
             "stake": 1,
         }
+        for i, (k, nk) in enumerate(zip(keys, network_keys))
+    }
     out = {"authorities": temp, "epoch": 0}
     print(json.dumps(out, indent=4))
 

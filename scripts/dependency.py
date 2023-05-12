@@ -32,8 +32,7 @@ def parse_args():
 def scan_file(file, process_line, depth=0):
     new_content = []
     with open(file) as f:
-        for line in f.readlines():
-            new_content.append(process_line(line, depth))
+        new_content.extend(process_line(line, depth) for line in f)
     with open(file, "w") as f:
         f.writelines(new_content)
 
@@ -50,8 +49,7 @@ def scan_files(path, process_line, depth=0):
 def try_match_line(line):
     # Remove all spacing for easier pattern matching
     line = line.strip().replace(' ', '')
-    m = PATTERN.match(line)
-    if m:
+    if m := PATTERN.match(line):
         name = m.group(1)
         if m.group(2) is None:
             extra = ""
@@ -138,7 +136,7 @@ def upgrade_revision(project, repo, rev, branch):
 
 
 args = parse_args()
-assert(args.project == "move" or args.project == "narwhal")
+assert args.project in ["move", "narwhal"]
 
 PATTERN = re.compile(
     '(.+)={git="https://github.com/.+/' + args.project + '",(?:rev|branch)="[^"]+"(,.*)?}'
@@ -150,8 +148,5 @@ else:
     assert args.command == "upgrade"
     repo = args.repo
     if not repo:
-        if args.project == "move":
-            repo = "move-language"
-        else:
-            repo = "MystenLabs"
+        repo = "move-language" if args.project == "move" else "MystenLabs"
     upgrade_revision(args.project, repo, args.rev, args.branch)

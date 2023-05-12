@@ -213,7 +213,7 @@ def multiaddr_to_url_data(addr: str):  # noqa: C901
 
         # Read port value for IP-based transports
         proto, port = next(addr_iter)
-        if proto.code != P_TCP and proto.code != P_UDP:
+        if proto.code not in [P_TCP, P_UDP]:
             raise AddressError(addr)
 
         # Pre-format network location URL part based on host+port
@@ -241,14 +241,10 @@ def multiaddr_to_url_data(addr: str):  # noqa: C901
     except StopIteration:
         raise AddressError(addr) from None
 
-    # Convert the parsed `addr` values to a URL base and parameters for the
-    # HTTP library
-    base_url = urllib.parse.SplitResult(
+    return urllib.parse.SplitResult(
         scheme="http" if not secure else "https",
         netloc=netloc,
         path="/",
         query="",
-        fragment=""
+        fragment="",
     ).geturl()
-
-    return base_url

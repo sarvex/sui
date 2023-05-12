@@ -14,10 +14,7 @@ class Settings:
         inputs_str = [
             key_name, key_path, repo_name, repo_url, branch, instance_type
         ]
-        if isinstance(aws_regions, list):
-            regions = aws_regions
-        else:
-            regions = [aws_regions]
+        regions = aws_regions if isinstance(aws_regions, list) else [aws_regions]
         inputs_str += regions
         ok = all(isinstance(x, str) for x in inputs_str)
         ok &= isinstance(base_port, int)

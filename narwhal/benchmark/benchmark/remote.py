@@ -49,9 +49,8 @@ class Bench:
             for x in output.values():
                 if x.stderr:
                     raise ExecutionError(x.stderr)
-        else:
-            if output.stderr:
-                raise ExecutionError(output.stderr)
+        elif output.stderr:
+            raise ExecutionError(output.stderr)
 
     def install(self):
         Print.info('Installing rust and cloning the repo...')
@@ -113,8 +112,6 @@ class Bench:
             ordered = [x for y in ordered for x in y]
             return ordered[:nodes]
 
-        # Spawn the primary and each worker on a different machine. Each
-        # authority runs in a single data center.
         else:
             primaries = max(bench_parameters.nodes)
 
@@ -126,12 +123,10 @@ class Bench:
                 if len(ips) < bench_parameters.workers + 1:
                     return []
 
-            # Ensure the primary and its workers are in the same region.
-            selected = []
-            for region in list(hosts.keys())[:primaries]:
-                ips = list(hosts[region])[:bench_parameters.workers + 1]
-                selected.append(ips)
-            return selected
+            return [
+                list(hosts[region])[: bench_parameters.workers + 1]
+                for region in list(hosts.keys())[:primaries]
+            ]
 
     def _background_run(self, host, command, log_file):
         name = splitext(basename(log_file))[0]
@@ -144,7 +139,7 @@ class Bench:
         if bench_parameters.collocate:
             ips = list(set(hosts))
         else:
-            ips = list(set([x for y in hosts for x in y]))
+            ips = list({x for y in hosts for x in y})
 
         Print.info(
             f'Updating {len(ips)} machines (branch "{self.settings.branch}")...'

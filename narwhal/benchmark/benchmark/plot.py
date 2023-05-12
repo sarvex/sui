@@ -16,10 +16,7 @@ from benchmark.aggregate import LogAggregator
 def default_major_formatter(x, pos):
     if pos is None:
         return
-    if x >= 1_000:
-        return f'{x/1000:.0f}k'
-    else:
-        return f'{x:.0f}'
+    return f'{x / 1000:.0f}k' if x >= 1_000 else f'{x:.0f}'
 
 
 @tick.FuncFormatter
@@ -87,13 +84,14 @@ class Ploter:
         for result in self.results:
             y_values, y_err = y_axis(result)
             x_values = self._variable(result)
-            if len(y_values) != len(y_err) or len(y_err) != len(x_values):
-                raise PlotError('Unequal number of x, y, and y_err values')
+            if len(y_values) == len(y_err) == len(x_values):
+                plt.errorbar(
+                    x_values, y_values, yerr=y_err, label=z_axis(result),
+                    linestyle='dotted', marker=next(markers), capsize=3
+                )
 
-            plt.errorbar(
-                x_values, y_values, yerr=y_err, label=z_axis(result),
-                linestyle='dotted', marker=next(markers), capsize=3
-            )
+            else:
+                raise PlotError('Unequal number of x, y, and y_err values')
 
         plt.legend(loc='lower center', bbox_to_anchor=(0.5, 1), ncol=3)
         plt.xlim(xmin=0)

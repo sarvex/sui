@@ -69,10 +69,10 @@ class WorkerCache:
         addresses = []
         good_nodes = self.size() - faults
         for worker_index in list(self.json['workers'].values())[:good_nodes]:
-            worker_addresses = []
-            for id, worker in worker_index.items():
-                worker_addresses += [(id,
-                                      multiaddr_to_url_data(worker['transactions']))]
+            worker_addresses = [
+                (id, multiaddr_to_url_data(worker['transactions']))
+                for id, worker in worker_index.items()
+            ]
             addresses.append(worker_addresses)
         return addresses
 
@@ -92,11 +92,7 @@ class WorkerCache:
 
     def ips(self, name=None):
         ''' Returns all the ips associated with an workers (in any order). '''
-        if name is None:
-            names = list(self.json['workers'].keys())
-        else:
-            names = [name]
-
+        names = list(self.json['workers'].keys()) if name is None else [name]
         ips = set()
         for name in names:
             for worker in self.json['workers'][name].values():
@@ -177,23 +173,19 @@ class Committee:
     def primary_addresses(self, faults=0):
         ''' Returns an ordered list of primaries' addresses. '''
         assert faults < self.size()
-        addresses = []
         good_nodes = self.size() - faults
-        for authority in list(self.json['authorities'].values())[:good_nodes]:
-            addresses += [multiaddr_to_url_data(authority['primary_address'])]
-        return addresses
+        return [
+            multiaddr_to_url_data(authority['primary_address'])
+            for authority in list(self.json['authorities'].values())[:good_nodes]
+        ]
 
     def ips(self, name=None):
         ''' Returns all the ips associated with an authority (in any order). '''
-        if name is None:
-            names = list(self.json['authorities'].keys())
-        else:
-            names = [name]
-
-        ips = set()
-        for name in names:
-            ips.add(self.ip(self.json['authorities'][name]['primary_address']))
-        return ips
+        names = list(self.json['authorities'].keys()) if name is None else [name]
+        return {
+            self.ip(self.json['authorities'][name]['primary_address'])
+            for name in names
+        }
 
     def remove_nodes(self, nodes):
         ''' remove the `nodes` last nodes from the committee. '''
@@ -271,20 +263,12 @@ class BenchParameters:
 
             self.workers = int(json['workers'])
 
-            if 'collocate' in json:
-                self.collocate = bool(json['collocate'])
-            else:
-                self.collocate = True
-
+            self.collocate = bool(json['collocate']) if 'collocate' in json else True
             self.tx_size = int(json['tx_size'])
 
             self.duration = int(json['duration'])
 
-            if 'failpoints' in json:
-                self.failpoints = bool(json['failpoints'])
-            else:
-                self.failpoints = False
-
+            self.failpoints = bool(json['failpoints']) if 'failpoints' in json else False
             self.runs = int(json['runs']) if 'runs' in json else 1
         except KeyError as e:
             raise ConfigError(f'Malformed bench parameters: missing key {e}')
@@ -315,11 +299,7 @@ class PlotParameters:
                 raise ConfigError('Missing number of workers')
             self.workers = [int(x) for x in workers]
 
-            if 'collocate' in json:
-                self.collocate = bool(json['collocate'])
-            else:
-                self.collocate = True
-
+            self.collocate = bool(json['collocate']) if 'collocate' in json else True
             self.tx_size = int(json['tx_size'])
 
             max_lat = json['max_latency']
